@@ -1,6 +1,11 @@
+
 # Work Time Tracker
 
 A Streamlit web application for tracking work time and productivity analysis with MongoDB Atlas integration.
+
+## Live Demo
+
+You can preview the app deployed at: [https://worktimetracker.streamlit.app/](https://worktimetracker.streamlit.app/)
 
 ## Features
 
