@@ -95,6 +95,7 @@ work-time-tracker/
 ### AI Assistant (LLM Agent)
 - Ask questions about your work data, productivity, or get advice
 - Uses OpenRouter API and Retrieval Augmented Generation (RAG) with recent MongoDB entries as context
+- Uses the free model [deepseek-r1t2-chimera:free](https://openrouter.ai/tngtech/deepseek-r1t2-chimera:free/api) from OpenRouter
 - API token is securely stored in `.streamlit/secrets.toml`
 
 ### Data Entry
