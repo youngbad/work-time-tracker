@@ -10,6 +10,7 @@ A Streamlit web application for tracking work time and productivity analysis wit
 - ✅ **Time analysis** by task type and daily breakdown
 - ✅ **Secure MongoDB Atlas** connection with error handling
 - ✅ **Responsive design** with modern UI
+- ✅ **AI Assistant (LLM Agent)** powered by OpenRouter API with Retrieval Augmented Generation (RAG) using recent MongoDB data
 
 ## Installation
 
@@ -49,6 +50,9 @@ Create `.streamlit/secrets.toml`:
 # MongoDB connection string
 mongo_uri = "mongodb+srv://username:password@cluster0.mongodb.net/?retryWrites=true&w=majority"
 
+# OpenRouter API token for LLM agent
+openrouter_token = "sk-or-...your-token..."
+
 # Optional theme settings
 [theme]
 primaryColor = "#FF6B6B"
@@ -63,6 +67,7 @@ textColor = "#262730"
 2. **View data:** All entries are displayed in a searchable table
 3. **Filter data:** Use the expandable filter section to filter by person or productivity
 4. **Analyze:** View interactive charts for productivity and time analysis
+5. **Ask the AI Assistant:** Use the built-in LLM agent (OpenRouter) to get insights or advice based on your recent work data (RAG)
 
 ## Technology Stack
 
@@ -71,6 +76,8 @@ textColor = "#262730"
 - **Charts:** Plotly Express
 - **Data Processing:** Pandas
 - **Backend:** Python 3.10+
+- **LLM Agent:** OpenRouter API (requests)
+- **API Client:** requests
 
 ## File Structure
 
@@ -80,11 +87,15 @@ work-time-tracker/
 ├── requirements.txt           # Python dependencies
 ├── README.md                 # This file
 └── .streamlit/
-    ├── secrets.toml          # MongoDB configuration (create this)
+    ├── secrets.toml          # MongoDB & OpenRouter configuration (create this)
     └── secrets_example.toml  # Configuration template
 ```
 
 ## Features in Detail
+### AI Assistant (LLM Agent)
+- Ask questions about your work data, productivity, or get advice
+- Uses OpenRouter API and Retrieval Augmented Generation (RAG) with recent MongoDB entries as context
+- API token is securely stored in `.streamlit/secrets.toml`
 
 ### Data Entry
 - Person selection with custom name option

@@ -5,6 +5,7 @@ import toml
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from datetime import datetime
+import requests
 
 
 st.set_page_config(page_title="Work Time Tracker", layout="wide")
@@ -15,13 +16,10 @@ def init_connection():
         # Try to use secrets, if not available, use direct connection
         if "mongo_uri" in st.secrets:
             uri = st.secrets["mongo_uri"]
-            
         # Create a new client and connect to the server
         client = MongoClient(uri, server_api=ServerApi('1'))
-        
         # Test connection
         client.admin.command('ping')
-        st.success("✅ Connected to MongoDB Atlas!")
         return client
     except Exception as e:
         st.error(f"Database connection error: {e}")
@@ -30,6 +28,8 @@ def init_connection():
 client = init_connection()
 if client is None:
     st.stop()
+else:
+    st.toast("Connected to MongoDB Atlas!", icon="✅")
 
 db = client["work-time-tracker"]  # Database name
 collection = db["work-time"]
@@ -59,6 +59,54 @@ def load_data():
     except Exception as e:
         st.error(f"Error while loading data: {e}")
         return pd.DataFrame()
+
+def get_recent_entries_for_context(n=10):
+    """Fetch the latest n entries from MongoDB for LLM context."""
+    try:
+        df = load_data()
+        if df.empty:
+            return "No work entries available."
+        # Sort by date (handle both 'date' and 'data')
+        date_col = "date" if "date" in df.columns else ("data" if "data" in df.columns else None)
+        if date_col:
+            df = df.sort_values(date_col, ascending=False)
+        # Select columns for context
+        cols = [c for c in ["person", "task", "task_type", "time", "productivity", "date"] if c in df.columns]
+        context_df = df[cols].head(n)
+        # Format as text
+        context_text = context_df.to_string(index=False)
+        return f"Recent work entries:\n{context_text}"
+    except Exception as e:
+        return f"Error fetching context: {e}"
+
+# --- LLM AGENT SECTION (OpenRouter) ---
+def query_llm_agent_openrouter(prompt):
+    """Query a free LLM agent via OpenRouter API (Mistral, OpenHermes, etc.)"""
+    API_URL = "https://openrouter.ai/api/v1/chat/completions"
+    # Read OpenRouter token securely from Streamlit secrets
+    if "openrouter_token" not in st.secrets:
+        return "Error: OpenRouter API token not found in secrets. Please add 'openrouter_token' to .streamlit/secrets.toml."
+    headers = {
+        "Authorization": f"Bearer {st.secrets['openrouter_token']}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "tngtech/deepseek-r1t2-chimera:free",  # You can use other open models
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
+    }
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        result = response.json()
+        # Parse OpenRouter response
+        if "choices" in result and len(result["choices"]) > 0:
+            return result["choices"][0]["message"]["content"]
+        else:
+            return str(result)
+    except Exception as e:
+        return f"Error querying LLM agent: {e}"
 
 # --- MAIN PAGE ---
 st.title("🕒 Work Time Tracker")
@@ -155,7 +203,7 @@ if not data.empty:
     if len(data) > 0:
         col1, col2 = st.columns(2)
 
-        # Productivity chart - handle both column names
+        # Productivity chart 
         productivity_col = "productivity" if "productivity" in data.columns else "produktywnosc"
         time_col = "time" if "time" in data.columns else "czas"
         
@@ -184,3 +232,19 @@ if not data.empty:
         st.info("No data after filtering.")
 else:
     st.info("No data to display. Add your first entry above.")
+
+
+# --- LLM AGENT SECTION (RAG) ---
+def query_llm_agent_rag(user_question):
+    """Query LLM agent with RAG: include recent MongoDB data as context."""
+    context = get_recent_entries_for_context(10)
+    prompt = f"You are an assistant for work time tracking. Here is recent data from the database:\n{context}\n\nUser question: {user_question}\n\nAnswer based on the data and your own knowledge."
+    return query_llm_agent_openrouter(prompt)
+
+st.subheader("🤖 AI Assistant (LLM Agent with Data Context)")
+with st.expander("Ask the AI about your work data, productivity, or anything! (RAG)"):
+    user_question_rag = st.text_area("Type your question for the AI agent:", "What can I do to be more productive?", key="llm_rag_text_area")
+    if st.button("Ask AI", key="llm_rag_button"):
+        with st.spinner("AI is thinking..."):
+            answer = query_llm_agent_rag(user_question_rag)
+        st.markdown(f"**AI Answer:**\n{answer}")
