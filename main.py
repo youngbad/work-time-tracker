@@ -1,114 +1,21 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import toml
-from pymongo import MongoClient
-from pymongo.server_api import ServerApi
+
 from datetime import datetime
-import requests
+from db_utils import get_mongo_client, get_collection, add_entry, load_data, get_recent_entries_for_context
+from llm_utils import query_llm_agent_openrouter
 
 
 st.set_page_config(page_title="Work Time Tracker", layout="wide")
 
-@st.cache_resource
-def init_connection():
-    try:
-        # Try to use secrets, if not available, use direct connection
-        if "mongo_uri" in st.secrets:
-            uri = st.secrets["mongo_uri"]
-        # Create a new client and connect to the server
-        client = MongoClient(uri, server_api=ServerApi('1'))
-        # Test connection
-        client.admin.command('ping')
-        return client
-    except Exception as e:
-        st.error(f"Database connection error: {e}")
-        return None
-
-client = init_connection()
+# --- INIT DB CONNECTION ---
+client = get_mongo_client()
 if client is None:
     st.stop()
 else:
     st.toast("Connected to MongoDB Atlas!", icon="✅")
-
-db = client["work-time-tracker"]  # Database name
-collection = db["work-time"]
-
-# --- FUNCTIONS ---
-def add_entry(person, task, task_type, time, productivity, date):
-    try:
-        entry = {
-            "person": person,
-            "task": task,
-            "task_type": task_type,
-            "time": time,
-            "productivity": productivity,
-            "date": date
-        }
-        collection.insert_one(entry)
-        return True
-    except Exception as e:
-        st.error(f"Error while saving: {e}")
-        return False
-
-@st.cache_data(ttl=60)  # Cache for 60 seconds
-def load_data():
-    try:
-        data = list(collection.find({}, {"_id": 0}))  # Exclude _id from results
-        return pd.DataFrame(data)
-    except Exception as e:
-        st.error(f"Error while loading data: {e}")
-        return pd.DataFrame()
-
-def get_recent_entries_for_context(n=10):
-    """Fetch the latest n entries from MongoDB for LLM context."""
-    try:
-        df = load_data()
-        if df.empty:
-            return "No work entries available."
-        # Sort by date (handle both 'date' and 'data')
-        date_col = "date" if "date" in df.columns else ("data" if "data" in df.columns else None)
-        if date_col:
-            df = df.sort_values(date_col, ascending=False)
-        # Select columns for context
-        cols = [c for c in ["person", "task", "task_type", "time", "productivity", "date"] if c in df.columns]
-        context_df = df[cols].head(n)
-        # Format as text
-        context_text = context_df.to_string(index=False)
-        return f"Recent work entries:\n{context_text}"
-    except Exception as e:
-        return f"Error fetching context: {e}"
-
-# --- LLM AGENT SECTION (OpenRouter) ---
-def query_llm_agent_openrouter(prompt):
-    """Query a free LLM agent via OpenRouter API (Mistral, OpenHermes, etc.)"""
-    API_URL = "https://openrouter.ai/api/v1/chat/completions"
-    # Read OpenRouter token securely from Streamlit secrets
-    if "openrouter_token" not in st.secrets:
-        return "Error: OpenRouter API token not found in secrets. Please add 'openrouter_token' to .streamlit/secrets.toml."
-    headers = {
-        "Authorization": f"Bearer {st.secrets['openrouter_token']}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "tngtech/deepseek-r1t2-chimera:free",  # You can use other open models
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
-    }
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
-        result = response.json()
-        # Parse OpenRouter response
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-        else:
-            return str(result)
-    except Exception as e:
-        return f"Error querying LLM agent: {e}"
-
-# --- MAIN PAGE ---
+collection = get_collection(client)
 st.title("🕒 Work Time Tracker")
 
 with st.form("add_entry"):
@@ -133,14 +40,14 @@ with st.form("add_entry"):
         elif person == "Other..." or not person.strip():
             st.error("❌ Please provide person name!")
         else:
-            success = add_entry(person, task, task_type, time, productivity, datetime.combine(date, datetime.min.time()))
+            success = add_entry(collection, person, task, task_type, time, productivity, datetime.combine(date, datetime.min.time()))
             if success:
                 st.success("✅ Entry saved!")
                 st.cache_data.clear()  # Clear cache after adding new entry
 
 # --- SHOW DATA ---
 st.subheader("📋 Registered Entries")
-data = load_data()
+data = load_data(collection)
 
 if not data.empty:
     # Date conversion with error handling
@@ -151,7 +58,7 @@ if not data.empty:
         elif "date" in data.columns:
             data["date"] = pd.to_datetime(data["date"])
             data["date_str"] = data["date"].dt.strftime("%Y-%m-%d")
-    except:
+    except Exception:
         st.error("Error in date conversion. Check data format in database.")
         st.stop()
 
@@ -237,7 +144,7 @@ else:
 # --- LLM AGENT SECTION (RAG) ---
 def query_llm_agent_rag(user_question):
     """Query LLM agent with RAG: include recent MongoDB data as context."""
-    context = get_recent_entries_for_context(10)
+    context = get_recent_entries_for_context(collection, 10)
     prompt = f"You are an assistant for work time tracking. Here is recent data from the database:\n{context}\n\nUser question: {user_question}\n\nAnswer based on the data and your own knowledge."
     return query_llm_agent_openrouter(prompt)
 
