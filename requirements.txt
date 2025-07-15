@@ -4,3 +4,4 @@ plotly>=5.15.0
 pymongo>=4.6.0
 toml>=0.10.2
 requests>=2.31.0
+streamlit-free-text-select>=0.1.2

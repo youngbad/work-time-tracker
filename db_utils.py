@@ -25,13 +25,18 @@ def get_collection(client: MongoClient, db_name: str = "work-time-tracker", coll
 def add_entry(collection, person: str, task: str, task_type: str, time: int, productivity: str, date) -> bool:
     """Add a work entry to MongoDB."""
     try:
+        # Ensure date is saved as ISO string (YYYY-MM-DD)
+        if hasattr(date, 'isoformat'):
+            date_str = date.isoformat()
+        else:
+            date_str = str(date)
         entry = {
             "person": person,
             "task": task,
             "task_type": task_type,
             "time": time,
             "productivity": productivity,
-            "date": date
+            "date": date_str
         }
         collection.insert_one(entry)
         return True

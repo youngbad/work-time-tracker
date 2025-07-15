@@ -5,6 +5,7 @@ import plotly.express as px
 from datetime import datetime
 from db_utils import get_mongo_client, get_collection, add_entry, load_data, get_recent_entries_for_context
 from llm_utils import query_llm_agent_openrouter
+from streamlit_free_text_select import st_free_text_select
 
 
 st.set_page_config(page_title="Work Time Tracker", layout="wide")
@@ -22,12 +23,32 @@ with st.form("add_entry"):
     st.subheader("Add Entry")
     col1, col2, col3 = st.columns(3)
 
-    person = col1.selectbox("Person", ["John", "Anna", "Tom", "Eva", "Other..."])
-    if person == "Other...":
-        person = col1.text_input("Enter name:", placeholder="Enter name")
-    
-    task = col1.text_input("Task", placeholder="Describe task")
-    task_type = col2.selectbox("Task Type", ["Analysis", "Coding", "Meeting", "Email", "Other"])
+    person_options = ["John", "Anna", "Tom", "Eva"]
+    person = st_free_text_select(
+        label="Person",
+        options=person_options,
+        index=None,
+        format_func=None,
+        placeholder="Type or select a name",
+        disabled=False,
+        delay=300,
+        key="person_free_text_select",
+        label_visibility="visible"
+    )
+    if person:
+        person = person.strip()
+
+    task = col1.text_input("Task description", placeholder="Describe task or add new task")
+
+    task_type_options = ["Analysis", "Coding", "Meeting", "Email"]
+    task_type_select = col2.selectbox("Task Type", task_type_options + ["Add new..."])
+    task_type_input = ""
+    if task_type_select == "Add new...":
+        task_type_input = col2.text_input("Enter new task type:", placeholder="Enter task type")
+        task_type = task_type_input.strip()
+    else:
+        task_type = task_type_select
+
     time = col2.number_input("Time (minutes)", min_value=1, max_value=480, value=30)
     productivity = col3.radio("Productivity", ["productive", "unproductive"])
     date = col3.date_input("Date", value=datetime.today())
@@ -36,9 +57,11 @@ with st.form("add_entry"):
     if submitted:
         # Data validation
         if not task.strip():
-            st.error("❌ Please provide task name!")
-        elif person == "Other..." or not person.strip():
+            st.error("❌ Please provide task description!")
+        elif not person:
             st.error("❌ Please provide person name!")
+        elif not task_type:
+            st.error("❌ Please provide task type!")
         else:
             success = add_entry(collection, person, task, task_type, time, productivity, datetime.combine(date, datetime.min.time()))
             if success:
@@ -52,12 +75,12 @@ data = load_data(collection)
 if not data.empty:
     # Date conversion with error handling
     try:
-        if "data" in data.columns:
-            data["date"] = pd.to_datetime(data["data"])
+        if "date" in data.columns:
+            # Convert to datetime, coerce errors to NaT
+            data["date"] = pd.to_datetime(data["date"], errors="coerce")
             data["date_str"] = data["date"].dt.strftime("%Y-%m-%d")
-        elif "date" in data.columns:
-            data["date"] = pd.to_datetime(data["date"])
-            data["date_str"] = data["date"].dt.strftime("%Y-%m-%d")
+        else:
+            st.warning("No 'date' column found in data.")
     except Exception:
         st.error("Error in date conversion. Check data format in database.")
         st.stop()
